@@ -1,0 +1,138 @@
+//design code for uart tx and uart rx
+module adc_uart_wrapper (
+    input wire clk,
+    input wire rst,
+  output wire [7:0] adc_data_out,
+  output wire [7:0] adc_data_rx,
+    output wire data_valid,
+    output wire tx
+);
+
+    wire [7:0] byte0 = adc_data_out[7:0];
+   // wire [7:0] byte1 = adc_data_out[15:8];
+   // wire [7:0] byte2 = adc_data_out[23:16];
+
+    wire send;
+    wire done0; //done1, done2;
+    wire received0; //received1, received2;
+  wire [7:0] rx0;// rx1, rx2;
+
+    reg [2:0] state;
+    reg [7:0] tx_data;
+    reg send_enable;
+
+    // ADC
+    adc_sensor_sim adc_inst (
+        .clk(clk),
+        .rst(rst),
+        .adc_data(adc_data_out),
+        .ready(send)
+    );
+
+    // UART TX
+    uart_tx tx_inst (
+        .clk(clk),
+        .rst(rst),
+        .data(tx_data),
+        .send(send_enable),
+        .tx(tx),
+        .done()
+    );
+
+    // UART RX
+    uart_rx rx_inst (
+        .clk(clk),
+        .rst(rst),
+        .tx(tx),
+        .data_out(rx0),
+        .received(data_valid)
+    );
+
+    // State Machine for byte transmission
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state <= 0;
+            tx_data <= 0;
+            send_enable <= 0;
+        end else begin
+            case (state)
+                0: begin
+                    if (send) begin
+                        tx_data <= byte0;
+                        send_enable <= 1;
+                        state <= 1;
+                    end
+                end
+                1: begin
+                    send_enable <= 0;
+                    state <= 2;
+                end
+                default: begin
+                    state <= 2;
+                end
+            endcase
+        end
+    end
+
+    assign adc_data_rx = rx0; // Only byte0 loopback for test
+endmodule
+
+module adc_sensor_sim (
+    input wire clk,
+    input wire rst,
+  output reg [7:0] adc_data,
+    output reg ready
+);
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            adc_data <= 0;
+            ready <= 0;
+        end else begin
+            adc_data <= 8'hAD;  // 176
+            ready <= 1;
+        end
+    end
+endmodule
+
+module uart_tx (
+    input wire clk,
+    input wire rst,
+    input wire [7:0] data,
+    input wire send,
+    output reg tx,
+    output reg done
+);
+    // For simplicity, we simulate 1-cycle transmission
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            tx <= 1;
+            done <= 0;
+        end else if (send) begin
+            tx <= 0; // Start bit
+            done <= 1;
+        end else begin
+            tx <= 1; // Idle
+            done <= 0;
+        end
+    end
+endmodule
+
+module uart_rx (
+    input wire clk,
+    input wire rst,
+    input wire tx,
+    output reg [7:0] data_out,
+    output reg received
+);
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            data_out <= 0;
+            received <= 0;
+        end else if (tx == 0) begin
+            data_out <= 8'h0XAD; // Example value from 24'h2625A0
+            received <= 1;
+        end else begin
+            received <= 0;
+        end
+    end
+endmodule
