@@ -1,0 +1,103 @@
+// DESIGN CODE OF top_module + weight classifier + FSM + counter + seven segment display
+module top_bagsortpro_simple ( 
+  input clk, rst,
+  input [15:0] weight_kg,
+  output [1:0] category,
+  output [2:0] fsm_out, 
+  output [6:0] cnt_light, cnt_medium, cnt_heavy, 
+  output [6:0] seg_light, seg_medium, seg_heavy 
+  ); 
+  
+  
+// Classification
+  weight_classifier wc (.weight_kg(weight_kg), .category(category)); 
+  
+// FSM 
+  fsm_conveyor fsm (.category(category), .fsm_out(fsm_out)); 
+  
+// Counters
+  wire en_l = (category == 2'b00); 
+  wire en_m = (category == 2'b01);
+  wire en_h = (category == 2'b10); 
+  counter c_l (.clk(clk), .rst(rst), .enable(en_l), .count(cnt_light)); 
+  counter c_m (.clk(clk), .rst(rst), .enable(en_m), .count(cnt_medium));
+  counter c_h (.clk(clk), .rst(rst), .enable(en_h), .count(cnt_heavy)); 
+  
+// 7-segment decoders
+  seven_seg_decoder s_l (.bin(cnt_light[3:0]), .seg(seg_light)); 
+  seven_seg_decoder s_m (.bin(cnt_medium[3:0]), .seg(seg_medium)); 
+  seven_seg_decoder s_h (.bin(cnt_heavy[3:0]), .seg(seg_heavy)); 
+  endmodule 
+
+//WEIGHT CLASSIFIER MODULE
+
+module weight_classifier(
+  input [15:0] weight_kg, 
+  output reg [1:0] category 
+  ); 
+  always @(*) 
+    begin 
+      if (weight_kg < 5) 
+        category = 2'b00; // Light
+      else if (weight_kg < 10) 
+        category = 2'b01; // Medium 
+      else 
+        category = 2'b10; // Heavy 
+      end 
+  endmodule 
+
+//FSM MODULE
+
+module fsm_conveyor ( 
+  input [1:0] category, 
+  output reg [2:0] fsm_out 
+  ); 
+  always @(*) 
+    begin 
+      case (category) 
+        2'b00: fsm_out = 3'b001; // Light 
+        2'b01: fsm_out = 3'b010; // Medium 
+        2'b10: fsm_out = 3'b100; // Heavy 
+        default: fsm_out = 3'b000; 
+        endcase 
+      end 
+  endmodule
+
+//COUNTER MODULE
+
+module counter(
+  input clk, rst, enable,
+  output reg [6:0] count 
+  ); 
+  always @(posedge clk or posedge rst) 
+    begin 
+      if (rst) 
+        count <= 0;
+      else if (enable)
+        count <= count + 1; 
+      end 
+endmodule 
+
+//SEVEN SEGMENT DISPLAY
+
+module seven_seg_decoder(
+  input [3:0] bin, 
+  output reg [6:0] seg 
+  );
+  always @(*) 
+    begin 
+      case (bin) 
+        4'd0: seg = 7'b1000000;
+        4'd1: seg = 7'b1111001; 
+        4'd2: seg = 7'b0100100; 
+        4'd3: seg = 7'b0110000; 
+        4'd4: seg = 7'b0011001; 
+        4'd5: seg = 7'b0010010;
+        4'd6: seg = 7'b0000010;
+        4'd7: seg = 7'b1111000; 
+        4'd8: seg = 7'b0000000; 
+        4'd9: seg = 7'b0011000; 
+        default: seg = 7'b1111111; 
+        endcase 
+    end 
+endmodule
