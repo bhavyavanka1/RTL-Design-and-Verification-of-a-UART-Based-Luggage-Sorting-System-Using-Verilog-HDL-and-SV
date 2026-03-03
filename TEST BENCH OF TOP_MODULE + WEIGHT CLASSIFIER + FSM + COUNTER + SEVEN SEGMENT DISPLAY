@@ -1,0 +1,53 @@
+// TEST BENCH OF TOP_MODULE + WEIGHT CLASSIFIER + FSM + COUNTER + SEVEN SEGMENT DISPLAY
+`timescale 1ns / 1ps 
+ 
+module tb_bagsortpro_simple; 
+ 
+    reg clk, rst; 
+    reg [15:0] weight_kg; 
+ 
+    wire [1:0] category; 
+    wire [2:0] fsm_out; 
+    wire [6:0] cnt_light, cnt_medium, cnt_heavy; 
+    wire [6:0] seg_light, seg_medium, seg_heavy; 
+ 
+    // Instantiate DUT 
+    top_bagsortpro_simple dut ( 
+        .clk(clk), .rst(rst), .weight_kg(weight_kg), 
+        .category(category), .fsm_out(fsm_out), 
+        .cnt_light(cnt_light), .cnt_medium(cnt_medium), .cnt_heavy(cnt_heavy), 
+        .seg_light(seg_light), .seg_medium(seg_medium), .seg_heavy(seg_heavy) 
+    ); 
+ 
+    // Clock generation 
+    always #5 clk = ~clk; 
+ 
+    // Stimulus 
+    initial begin 
+        $display("| Time(ns) | Weight(kg) | Category | FSM | Cnt_L | Cnt_M | Cnt_H | SEG_L   | SEG_M   | SEG_H   |"); 
+        $display("|----------|------------|----------|-----|--------|--------|--------|---------|---------|---------|"); 
+ 
+        clk = 0; rst = 1; weight_kg = 0; 
+        #10 rst = 0; 
+ 
+        send_weight(3);   // Light 
+        send_weight(6);   // Medium 
+        send_weight(12);  // Heavy 
+        send_weight(2);   // Light 
+        send_weight(15);  // Heavy 
+ 
+        #20; 
+        $finish; 
+    end 
+ 
+    task send_weight(input [15:0] w); 
+        begin 
+            weight_kg = w; 
+            #10; 
+            $display("| %8t | %10d |    %b     |  %03b |   %1d    |   %1d    |   %1d    | %07b | %07b | %07b |", 
+                $time, weight_kg, category, fsm_out, cnt_light, cnt_medium, 
+cnt_heavy, seg_light, seg_medium, seg_heavy); 
+        end 
+    endtask 
+ 
+endmodule 
