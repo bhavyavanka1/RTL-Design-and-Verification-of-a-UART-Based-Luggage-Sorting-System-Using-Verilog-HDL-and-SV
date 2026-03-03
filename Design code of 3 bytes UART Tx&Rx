@@ -1,0 +1,224 @@
+//Design code of 3bytes tx: 
+module adc_uart_wrapper ( 
+    input  logic clk, 
+    input  logic rst, 
+    input  logic [15:0] weight_kg, 
+    output logic tx, 
+    output logic [23:0] adc_data_out, 
+    output logic [23:0] adc_data_rx, 
+    output logic data_valid 
+); 
+ 
+    logic start_tx; 
+    logic done_tx; 
+ 
+    sensor_adc_sim adc ( 
+        .clk(clk), 
+        .rst(rst), 
+        .weight_kg(weight_kg), 
+        .adc_data(adc_data_out) 
+    ); 
+ 
+    uart_tx_3byte tx_inst ( 
+        .clk(clk), 
+        .rst(rst), 
+        .data_in(adc_data_out), 
+        .start(start_tx), 
+        .tx(tx), 
+        .done(done_tx) 
+    ); 
+ 
+    assign start_tx = ~done_tx;  // start if previous done 
+ 
+    uart_rx_3byte rx_inst ( 
+        .clk(clk), 
+        .rst(rst), 
+        .rx(tx), 
+        .data_out(adc_data_rx), 
+        .data_valid(data_valid) 
+    ); 
+endmodule 
+ 
+ 
+module sensor_adc_sim ( 
+    input  logic        clk, 
+    input  logic        rst, 
+    input  logic [15:0] weight_kg, 
+    output logic [23:0] adc_data 
+); 
+    always_ff @(posedge clk or posedge rst) begin 
+        if (rst) 
+            adc_data <= 24'd0; 
+        else 
+            adc_data <= weight_kg * 100000;  // Simulated conversion 
+    end 
+endmodule 
+ 
+module uart_tx_3byte ( 
+    input  logic        clk, 
+    input  logic        rst, 
+    input  logic [23:0] data_in, 
+    input  logic        start, 
+    output logic        tx, 
+    output logic        done 
+); 
+ 
+    typedef enum logic [1:0] {IDLE, SEND_B1, SEND_B2, SEND_B3} state_t; 
+    state_t state; 
+ 
+    logic       tx_start; 
+    logic       tx_busy; 
+    logic [7:0] tx_data; 
+    logic       internal_tx; 
+ 
+    uart_tx_byte tx_inst ( 
+        .clk(clk), 
+        .rst(rst), 
+        .data_in(tx_data), 
+        .start(tx_start), 
+        .tx(internal_tx), 
+        .busy(tx_busy) 
+    ); 
+ 
+    assign tx = internal_tx; 
+    assign done = (state == IDLE && !tx_busy); 
+ 
+    always_ff @(posedge clk or posedge rst) begin 
+        if (rst) begin 
+            state     <= IDLE; 
+            tx_start  <= 0; 
+        end else begin 
+            case (state) 
+                IDLE: begin 
+                    tx_start <= 0; 
+                    if (start) state <= SEND_B1; 
+                end 
+                SEND_B1: begin 
+                    tx_data <= data_in[23:16]; 
+                    tx_start <= 1; 
+                    state <= SEND_B2; 
+                end 
+                SEND_B2: begin 
+                    if (!tx_busy) begin 
+                        tx_data <= data_in[15:8]; 
+                        tx_start <= 1; 
+                        state <= SEND_B3; 
+                    end else tx_start <= 0; 
+                end 
+                SEND_B3: begin 
+                    if (!tx_busy) begin 
+                        tx_data <= data_in[7:0]; 
+                        tx_start <= 1; 
+                        state <= IDLE; 
+                    end else tx_start <= 0; 
+                end 
+            endcase 
+        end 
+    end 
+endmodule 
+ 
+// Supporting byte transmitter 
+module uart_tx_byte ( 
+    input  logic        clk, 
+    input  logic        rst, 
+    input  logic [7:0]  data_in, 
+    input  logic        start, 
+    output logic        tx, 
+    output logic        busy 
+); 
+    parameter CLK_FREQ = 50000000; 
+    parameter BAUD     = 9600; 
+    localparam CLKS_PER_BIT = CLK_FREQ / BAUD; 
+ 
+    typedef enum logic [3:0] { 
+        IDLE, START, BIT0, BIT1, BIT2, BIT3, BIT4, BIT5, BIT6, BIT7, STOP 
+    } state_t; 
+ 
+    state_t state; 
+    logic [7:0] data_reg; 
+    logic [15:0] clk_count; 
+    logic [2:0] bit_index; 
+ 
+    always_ff @(posedge clk or posedge rst) begin 
+        if (rst) begin 
+            state <= IDLE; 
+            tx <= 1; 
+            clk_count <= 0; 
+            bit_index <= 0; 
+            busy <= 0; 
+        end else begin 
+            case (state) 
+                IDLE: begin 
+                    tx <= 1; 
+                    busy <= 0; 
+                    if (start) begin 
+                        data_reg <= data_in; 
+                        state <= START; 
+                        busy <= 1; 
+                    end 
+                end 
+                START: begin 
+                    tx <= 0; 
+                    if (clk_count == CLKS_PER_BIT-1) begin 
+                        clk_count <= 0; 
+                        state <= BIT0; 
+                    end else clk_count <= clk_count + 1; 
+                end 
+                BIT0, BIT1, BIT2, BIT3, BIT4, BIT5, BIT6, BIT7: begin 
+                    tx <= data_reg[bit_index]; 
+                    if (clk_count == CLKS_PER_BIT-1) begin 
+                        clk_count <= 0; 
+                        bit_index <= bit_index + 1; 
+                        state <= state_t'(2'b01);  //  Use type casting to match enum type 
+ 
+                    //  state <= state + 1; 
+                    end else clk_count <= clk_count + 1; 
+                end 
+                STOP: begin 
+                    tx <= 1; 
+                    if (clk_count == CLKS_PER_BIT-1) begin 
+                        state <= IDLE; 
+                        clk_count <= 0; 
+                        bit_index <= 0; 
+                        busy <= 0; 
+                    end else clk_count <= clk_count + 1; 
+                end 
+            endcase 
+        end 
+    end 
+endmodule 
+ 
+module uart_rx_3byte ( 
+    input  logic       clk, 
+    input  logic       rst, 
+    input  logic       rx, 
+    output logic [23:0] data_out, 
+    output logic       data_valid 
+); 
+    logic [7:0] byte1, byte2, byte3; 
+    logic       valid1, valid2, valid3; 
+ 
+    logic [1:0] byte_count; 
+ 
+    uart_rx_byte rx_byte_inst ( 
+        .clk(clk), 
+        .rst(rst), 
+        .rx(rx), 
+        .data_out(data_out[7:0]), 
+        .valid(data_valid) 
+    ); 
+ 
+    // Add pipeline logic for 3-byte capture if needed 
+    // Or extend rx_byte to handle 3-byte sequential capture with FSM 
+endmodule 
+ 
+// Placeholder receiver (1 byte for now) 
+module uart_rx_byte ( 
+    input  logic clk, 
+    input  logic rst, 
+    input  logic rx, 
+    output logic [7:0] data_out, 
+    output logic valid 
+); 
+    // Implement similar to tx logic but for receiving 8 bits with START/STOP detection     // Placeholder, full implementation can be provided if needed 
+endmodule 
