@@ -1,0 +1,38 @@
+module adc_uart_wrapper_tb; 
+    logic clk; 
+    logic rst; 
+    logic [15:0] weight_kg; 
+    logic tx; 
+    logic [23:0] adc_data_out, adc_data_rx; 
+    logic data_valid; 
+ 
+    adc_uart_wrapper dut ( 
+        .clk(clk), 
+        .rst(rst), 
+        .weight_kg(weight_kg), 
+        .tx(tx), 
+        .adc_data_out(adc_data_out), 
+        .adc_data_rx(adc_data_rx), 
+        .data_valid(data_valid) 
+    ); 
+ 
+    always #10 clk = ~clk; 
+ 
+    initial begin 
+        clk = 0; 
+        rst = 1; 
+        weight_kg = 0; 
+        #50 rst = 0; 
+        weight_kg = 16'd25; 
+        wait (data_valid); 
+        #10; 
+ 
+        $display("ADC Digital Output Sent     = %0d (0x%06h)", adc_data_out,adc_data_out); 
+        $display("ADC Digital Output Received = %0d (0x%06h)", adc_data_rx, adc_data_rx); 
+        if (adc_data_out === adc_data_rx) 
+            $display(" Test PASSED: Data matched!"); 
+        else 
+            $display(" Test FAILED: Data mismatch!"); 
+        $finish; 
+    end 
+endmodule 
